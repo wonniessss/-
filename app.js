@@ -364,6 +364,8 @@ async function displayRecommendations(data) {
     await animateReveal(balls, main, bonus, copyBtn);
     await new Promise((r) => setTimeout(r, 100));
   }
+
+  showSignupModalIfNeeded();
 }
 
 async function draw() {
@@ -669,3 +671,208 @@ loadMoreBtn.addEventListener('click', () => {
 });
 
 loadHistory();
+
+/* ── Signup modal ── */
+const signupModal = document.getElementById('signupModal');
+const signupForm = document.getElementById('signupForm');
+const signupModalClose = document.getElementById('signupModalClose');
+const signupLaterBtn = document.getElementById('signupLaterBtn');
+const signupErrorEl = document.getElementById('signupError');
+const SUBSCRIBED_KEY = 'lotto_subscribed';
+const DISMISS_SESSION_KEY = 'lotto_signup_dismissed';
+
+function showSignupModalIfNeeded() {
+  if (localStorage.getItem(SUBSCRIBED_KEY)) return;
+  if (sessionStorage.getItem(DISMISS_SESSION_KEY)) return;
+  signupModal.hidden = false;
+  signupModal.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  document.getElementById('signupName')?.focus();
+}
+
+function hideSignupModal() {
+  signupModal.hidden = true;
+  signupModal.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+  signupErrorEl.hidden = true;
+}
+
+function validatePhone(phone) {
+  const digits = phone.replace(/\D/g, '');
+  return /^01[016789]\d{7,8}$/.test(digits);
+}
+
+function validateEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+signupForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  signupErrorEl.hidden = true;
+
+  const name = document.getElementById('signupName').value.trim();
+  const phone = document.getElementById('signupPhone').value.trim();
+  const email = document.getElementById('signupEmail').value.trim();
+
+  if (!name) {
+    signupErrorEl.textContent = '이름을 입력해 주세요.';
+    signupErrorEl.hidden = false;
+    return;
+  }
+  if (!validatePhone(phone)) {
+    signupErrorEl.textContent = '올바른 전화번호를 입력해 주세요.';
+    signupErrorEl.hidden = false;
+    return;
+  }
+  if (!validateEmail(email)) {
+    signupErrorEl.textContent = '올바른 이메일을 입력해 주세요.';
+    signupErrorEl.hidden = false;
+    return;
+  }
+
+  localStorage.setItem(SUBSCRIBED_KEY, JSON.stringify({ name, phone, email, at: Date.now() }));
+  hideSignupModal();
+  appendChatMessage('bot', `${name}님, 가입이 완료되었습니다! 다음 AI 맞춤 번호 추천을 기대해 주세요.`);
+});
+
+signupModalClose.addEventListener('click', () => {
+  sessionStorage.setItem(DISMISS_SESSION_KEY, '1');
+  hideSignupModal();
+});
+
+signupLaterBtn.addEventListener('click', () => {
+  sessionStorage.setItem(DISMISS_SESSION_KEY, '1');
+  hideSignupModal();
+});
+
+signupModal.addEventListener('click', (e) => {
+  if (e.target === signupModal) {
+    sessionStorage.setItem(DISMISS_SESSION_KEY, '1');
+    hideSignupModal();
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !signupModal.hidden) {
+    sessionStorage.setItem(DISMISS_SESSION_KEY, '1');
+    hideSignupModal();
+  }
+});
+
+/* ── Reviews ── */
+const reviewsListEl = document.getElementById('reviewsList');
+const reviewForm = document.getElementById('reviewForm');
+const USER_REVIEWS_KEY = 'lotto_user_reviews';
+
+const EXAMPLE_REVIEWS = [
+  {
+    name: '김*수',
+    location: '서울 강남',
+    prize: '19억 2,400만원',
+    text: 'AI 운세 추천 번호로 1등 당첨! 3개월간 꾸준히 추천받은 번호 조합이었는데, 생년월일 기반 운세가 정말 잘 맞더라고요. 주변에도 꼭 추천하고 있습니다.',
+    example: true,
+  },
+  {
+    name: '이*영',
+    location: '부산 해운대',
+    prize: '26억 7,480만원',
+    text: '처음엔 반신반의했는데 챗봇 운세 추천 번호로 1등에 당첨됐습니다. 특히 보너스 번호까지 맞춰서 2등이 아닌 1등이 됐어요. 인생이 바뀌었습니다!',
+    example: true,
+  },
+  {
+    name: '박*민',
+    location: '대구 수성',
+    prize: '14억 5,200만원',
+    text: '매주 AI 추천 알림 받고 번호 구매했더니 드디어 1등! 운세 설명이 구체적이라 믿음이 갔고, 실제로 행운이 찾아왔네요.',
+    example: true,
+  },
+  {
+    name: '최*현',
+    location: '인천 연수',
+    prize: '21억 8,000만원',
+    text: '로또는 운이라고만 생각했는데, 생년월일+오늘 운세 조합 추천이 이렇게 강력할 줄 몰랐어요. 가족과 여행 계획 중입니다!',
+    example: true,
+  },
+];
+
+function getUserReviews() {
+  try {
+    return JSON.parse(localStorage.getItem(USER_REVIEWS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveUserReview(review) {
+  const reviews = getUserReviews();
+  reviews.unshift(review);
+  localStorage.setItem(USER_REVIEWS_KEY, JSON.stringify(reviews.slice(0, 20)));
+}
+
+function createReviewCard({ name, location, prize, text, example }) {
+  const card = document.createElement('article');
+  card.className = `review-card${example ? ' review-card--example' : ''}`;
+
+  const header = document.createElement('div');
+  header.className = 'review-card__header';
+
+  const authorWrap = document.createElement('div');
+
+  const author = document.createElement('span');
+  author.className = 'review-card__author';
+  author.textContent = name;
+
+  const meta = document.createElement('span');
+  meta.className = 'review-card__meta';
+  meta.textContent = location ? ` · ${location}` : '';
+
+  authorWrap.append(author, meta);
+
+  const badge = document.createElement('span');
+  badge.className = 'review-card__badge';
+  badge.textContent = example ? '1등 당첨 예시' : '이용 후기';
+
+  header.append(authorWrap, badge);
+
+  const textEl = document.createElement('p');
+  textEl.className = 'review-card__text';
+  textEl.textContent = text;
+
+  card.append(header, textEl);
+
+  if (prize) {
+    const prizeEl = document.createElement('p');
+    prizeEl.className = 'review-card__prize';
+    prizeEl.textContent = `당첨금 ${prize}`;
+    card.appendChild(prizeEl);
+  }
+
+  return card;
+}
+
+function renderReviews() {
+  const userReviews = getUserReviews();
+  const all = [...userReviews, ...EXAMPLE_REVIEWS];
+  reviewsListEl.replaceChildren(...all.map(createReviewCard));
+}
+
+reviewForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = document.getElementById('reviewName').value.trim();
+  const text = document.getElementById('reviewText').value.trim();
+  if (!name || !text) return;
+
+  saveUserReview({
+    name,
+    location: '방금 전',
+    prize: '',
+    text,
+    example: false,
+  });
+
+  reviewForm.reset();
+  renderReviews();
+  reviewsListEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+renderReviews();
