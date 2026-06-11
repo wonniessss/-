@@ -19,6 +19,9 @@ const chatSendBtnEl = document.getElementById('chatSendBtn');
 let setCount = 1;
 let isDrawing = false;
 let chatHistory = [];
+let activeBirthdate = '';
+let sessionFortune = null;
+let recommendSeq = 0;
 
 const API_CHAT_URL = '/api/chat';
 
@@ -58,6 +61,68 @@ function clearBirthdateError() {
   birthdateErrorEl.hidden = true;
 }
 
+function resetUiState() {
+  removeLoadingMessage();
+  isDrawing = false;
+  drawBtn.disabled = false;
+  chatSendBtnEl.disabled = false;
+  chatInputEl.disabled = false;
+  drawBtn.classList.remove('drawing');
+}
+
+function resetChatForNewBirthdate() {
+  chatHistory = [];
+  chatMessagesEl.innerHTML = '';
+  appendChatMessage('bot', '생년월일이 변경되었어요. 새로운 운세 기반 번호 추천을 받아보세요!');
+}
+
+function onBirthdateChange() {
+  clearBirthdateError();
+  const value = birthdateEl.value;
+
+  if (value && value !== activeBirthdate) {
+    if (activeBirthdate) {
+      sessionFortune = null;
+      recommendSeq = 0;
+      resetChatForNewBirthdate();
+      resultsEl.innerHTML = '';
+      emptyStateEl.style.display = '';
+    }
+    activeBirthdate = value;
+    resetUiState();
+  }
+}
+
+function saveSessionFortune(data) {
+  if (data.fortune) {
+    sessionFortune = {
+      fortune: data.fortune,
+      explanation: data.explanation || '',
+    };
+  }
+}
+
+function localChatReply(message) {
+  if (!sessionFortune?.fortune) {
+    return '먼저 운세 기반 번호 추천 버튼으로 오늘의 운세와 번호를 받아보세요!';
+  }
+
+  const { fortune, explanation } = sessionFortune;
+  const topics = [
+    { re: /연애|애정|사랑|썸|이별/, label: '연애운', tip: '감정 표현에 솔직함이 행운을 부릅니다.' },
+    { re: /금전|돈|재물|투자|당첨/, label: '금전운', tip: '과욕보다는 계획적인 선택이 좋습니다.' },
+    { re: /건강|컨디션|피로|운동/, label: '건강운', tip: '충분한 휴식과 규칙적인 생활 리듬이 중요합니다.' },
+    { re: /직장|일|취업|시험|면접|학업/, label: '직장·학업운', tip: '꾸준함과 집중력이 성과로 이어집니다.' },
+  ];
+
+  const topic = topics.find((t) => t.re.test(message));
+  if (topic) {
+    return `[${topic.label}]\n\n${fortune}\n\n${topic.tip}${explanation ? `\n\n추천 번호와의 연결: ${explanation}` : ''}`;
+  }
+
+  return `${fortune}\n\n${explanation ? `번호 추천과 연결하면: ${explanation}\n\n` : ''}연애, 금전, 건강 등 구체적인 주제로 질문해 주시면 운세에 맞춰 조언해 드릴게요.`;
+}
+
 function appendChatMessage(role, text, label) {
   const msg = document.createElement('div');
   msg.className = `chat-message chat-message--${role}`;
@@ -91,7 +156,7 @@ function removeLoadingMessage() {
   document.getElementById('chatLoading')?.remove();
 }
 
-async function requestFortune({ mode, message = '' }) {
+async function requestFortune({ mode, message = '', useFallback = false }) {
   const res = await fetch(API_CHAT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -101,13 +166,25 @@ async function requestFortune({ mode, message = '' }) {
       message,
       history: chatHistory,
       mode,
+      fortuneContext: sessionFortune,
+      seq: recommendSeq,
+      useFallback,
     }),
   });
 
   const data = await res.json();
+
   if (!res.ok) {
+    if (data.code === 'QUOTA_EXCEEDED' && !useFallback) {
+      return requestFortune({ mode, message, useFallback: true });
+    }
     throw new Error(data.error || '운세 분석에 실패했습니다.');
   }
+
+  if (data.fromFallback && mode === 'chat' && !data.reply && sessionFortune) {
+    data.reply = localChatReply(message);
+  }
+
   return data;
 }
 
@@ -252,17 +329,18 @@ function createLottoSet({ main, bonus }, index, animate) {
 }
 
 async function animateReveal(ballsEl, main, bonus, copyBtn) {
-  const rollingBalls = ballsEl.querySelectorAll('.ball');
-
   for (let i = 0; i < PICK; i++) {
     await new Promise((r) => setTimeout(r, 180 + Math.random() * 120));
-    const newBall = createBall(main[i], 0);
-    rollingBalls[i].replaceWith(newBall);
+    const rolling = ballsEl.querySelector('.ball.rolling');
+    if (!rolling) break;
+    rolling.replaceWith(createBall(main[i], 0));
   }
 
   await new Promise((r) => setTimeout(r, 280 + Math.random() * 120));
-  const bonusBall = createBall(bonus, 0);
-  rollingBalls[PICK].replaceWith(bonusBall);
+  const bonusRolling = ballsEl.querySelector('.ball.rolling');
+  if (bonusRolling) {
+    bonusRolling.replaceWith(createBall(bonus, 0));
+  }
 
   copyBtn.disabled = false;
 }
@@ -299,6 +377,9 @@ async function draw() {
   }
 
   clearBirthdateError();
+  if (!activeBirthdate) activeBirthdate = birthdateEl.value;
+
+  recommendSeq += 1;
   isDrawing = true;
   drawBtn.disabled = true;
   chatSendBtnEl.disabled = true;
@@ -309,18 +390,20 @@ async function draw() {
   try {
     const data = await requestFortune({ mode: 'recommend' });
     removeLoadingMessage();
+    saveSessionFortune(data);
+
+    if (data.fromFallback) {
+      appendChatMessage('bot', 'AI 사용 한도로 로컬 운세 추천을 사용했습니다.');
+    }
+
     addBotResponses(data, true);
     await displayRecommendations(data);
   } catch (error) {
     removeLoadingMessage();
-    appendChatMessage('bot', error.message || '운세 분석에 실패했습니다. Vercel에 GEMINI_API_KEY가 설정되어 있는지 확인해 주세요.');
+    appendChatMessage('bot', error.message || '운세 분석에 실패했습니다.');
+  } finally {
+    resetUiState();
   }
-
-  isDrawing = false;
-  drawBtn.disabled = false;
-  chatSendBtnEl.disabled = false;
-  chatInputEl.disabled = false;
-  drawBtn.classList.remove('drawing');
 }
 
 async function handleChatSubmit(e) {
@@ -338,6 +421,8 @@ async function handleChatSubmit(e) {
   }
 
   clearBirthdateError();
+  if (!activeBirthdate) activeBirthdate = birthdateEl.value;
+
   appendChatMessage('user', message);
   chatHistory.push({ role: 'user', content: message });
   chatInputEl.value = '';
@@ -349,24 +434,45 @@ async function handleChatSubmit(e) {
   appendLoadingMessage();
 
   try {
-    const data = await requestFortune({ mode: 'chat', message });
+    const wantsNumbers = /번호|로또|추천|행운/.test(message);
+    let data;
+
+    if (!wantsNumbers && sessionFortune?.fortune) {
+      try {
+        data = await requestFortune({ mode: 'chat', message });
+      } catch {
+        data = { reply: localChatReply(message), sets: [], fortune: sessionFortune.fortune };
+      }
+    } else {
+      if (wantsNumbers) recommendSeq += 1;
+      data = await requestFortune({ mode: 'chat', message });
+      if (data.fortune) saveSessionFortune(data);
+    }
+
     removeLoadingMessage();
 
-    const wantsNumbers = /번호|로또|추천|행운/.test(message);
-    addBotResponses(data, wantsNumbers && data.sets?.length > 0);
+    if (data.fromFallback && !wantsNumbers) {
+      appendChatMessage('bot', data.reply || localChatReply(message));
+      chatHistory.push({ role: 'assistant', content: data.reply || localChatReply(message) });
+    } else {
+      addBotResponses(data, wantsNumbers && data.sets?.length > 0);
+    }
 
     if (wantsNumbers && data.sets?.length > 0) {
       await displayRecommendations(data);
     }
   } catch (error) {
     removeLoadingMessage();
-    appendChatMessage('bot', error.message || '답변 생성에 실패했습니다.');
+    const fallback = localChatReply(message);
+    if (sessionFortune?.fortune) {
+      appendChatMessage('bot', fallback);
+      chatHistory.push({ role: 'assistant', content: fallback });
+    } else {
+      appendChatMessage('bot', error.message || '답변 생성에 실패했습니다.');
+    }
+  } finally {
+    resetUiState();
   }
-
-  isDrawing = false;
-  drawBtn.disabled = false;
-  chatSendBtnEl.disabled = false;
-  chatInputEl.disabled = false;
 }
 
 function updateStepper() {
@@ -392,8 +498,8 @@ increaseBtn.addEventListener('click', () => {
 drawBtn.addEventListener('click', draw);
 chatFormEl.addEventListener('submit', handleChatSubmit);
 
-birthdateEl.addEventListener('input', clearBirthdateError);
-birthdateEl.addEventListener('change', clearBirthdateError);
+birthdateEl.addEventListener('input', onBirthdateChange);
+birthdateEl.addEventListener('change', onBirthdateChange);
 
 const today = new Date();
 birthdateEl.max = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
