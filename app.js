@@ -706,13 +706,28 @@ function validateEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-signupForm.addEventListener('submit', (e) => {
+async function submitSignup({ name, phone, email }) {
+  const res = await fetch('/api/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, phone, email }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || '가입에 실패했습니다.');
+  }
+  return data;
+}
+
+signupForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   signupErrorEl.hidden = true;
 
   const name = document.getElementById('signupName').value.trim();
   const phone = document.getElementById('signupPhone').value.trim();
   const email = document.getElementById('signupEmail').value.trim();
+  const submitBtn = signupForm.querySelector('button[type="submit"]');
 
   if (!name) {
     signupErrorEl.textContent = '이름을 입력해 주세요.';
@@ -730,9 +745,22 @@ signupForm.addEventListener('submit', (e) => {
     return;
   }
 
-  localStorage.setItem(SUBSCRIBED_KEY, JSON.stringify({ name, phone, email, at: Date.now() }));
-  hideSignupModal();
-  appendChatMessage('bot', `${name}님, 가입이 완료되었습니다! 다음 AI 맞춤 번호 추천을 기대해 주세요.`);
+  submitBtn.disabled = true;
+  submitBtn.textContent = '가입 중...';
+
+  try {
+    await submitSignup({ name, phone, email });
+    localStorage.setItem(SUBSCRIBED_KEY, JSON.stringify({ name, phone, email, at: Date.now() }));
+    hideSignupModal();
+    appendChatMessage('bot', `${name}님, 가입이 완료되었습니다! 다음 AI 맞춤 번호 추천을 기대해 주세요.`);
+    signupForm.reset();
+  } catch (error) {
+    signupErrorEl.textContent = error.message || '가입에 실패했습니다.';
+    signupErrorEl.hidden = false;
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = '무료 가입하기';
+  }
 });
 
 signupModalClose.addEventListener('click', () => {
