@@ -9,9 +9,61 @@ const increaseBtn = document.getElementById('increaseBtn');
 const drawBtn = document.getElementById('drawBtn');
 const resultsEl = document.getElementById('results');
 const emptyStateEl = document.getElementById('emptyState');
+const birthdateEl = document.getElementById('birthdate');
+const birthdateErrorEl = document.getElementById('birthdateError');
 
 let setCount = 1;
 let isDrawing = false;
+let drawNonce = 0;
+
+function createSeededRandom(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+}
+
+function getBirthdateSeed(setIndex) {
+  const [y, m, d] = birthdateEl.value.split('-').map(Number);
+  return y * 10000 + m * 100 + d + setIndex * 997 + drawNonce * 7919;
+}
+
+function validateBirthdate() {
+  const value = birthdateEl.value;
+  if (!value) {
+    return { valid: false, message: '생년월일을 입력해 주세요.' };
+  }
+
+  const date = new Date(value + 'T00:00:00');
+  const [y, m, d] = value.split('-').map(Number);
+  if (date.getFullYear() !== y || date.getMonth() + 1 !== m || date.getDate() !== d) {
+    return { valid: false, message: '올바른 생년월일을 입력해 주세요.' };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (date > today) {
+    return { valid: false, message: '오늘 이후 날짜는 입력할 수 없습니다.' };
+  }
+
+  if (y < 1900) {
+    return { valid: false, message: '1900년 이후 날짜를 입력해 주세요.' };
+  }
+
+  return { valid: true };
+}
+
+function showBirthdateError(message) {
+  birthdateEl.classList.add('is-error');
+  birthdateErrorEl.textContent = message;
+  birthdateErrorEl.hidden = false;
+}
+
+function clearBirthdateError() {
+  birthdateEl.classList.remove('is-error');
+  birthdateErrorEl.hidden = true;
+}
 
 function getBallColor(num) {
   if (num <= 10) return 'yellow';
@@ -21,16 +73,17 @@ function getBallColor(num) {
   return 'green';
 }
 
-function generateNumbers() {
+function generateNumbers(setIndex = 0) {
+  const rng = createSeededRandom(getBirthdateSeed(setIndex));
   const pool = Array.from({ length: MAX }, (_, i) => i + MIN);
   const main = [];
 
   for (let i = 0; i < PICK; i++) {
-    const idx = Math.floor(Math.random() * pool.length);
+    const idx = Math.floor(rng() * pool.length);
     main.push(pool.splice(idx, 1)[0]);
   }
 
-  const bonusIdx = Math.floor(Math.random() * pool.length);
+  const bonusIdx = Math.floor(rng() * pool.length);
   const bonus = pool[bonusIdx];
 
   return {
@@ -142,6 +195,16 @@ async function animateReveal(ballsEl, main, bonus, copyBtn) {
 
 async function draw() {
   if (isDrawing) return;
+
+  const birthdateCheck = validateBirthdate();
+  if (!birthdateCheck.valid) {
+    showBirthdateError(birthdateCheck.message);
+    birthdateEl.focus();
+    return;
+  }
+
+  clearBirthdateError();
+  drawNonce += 1;
   isDrawing = true;
   drawBtn.disabled = true;
   drawBtn.classList.add('drawing');
@@ -149,7 +212,7 @@ async function draw() {
   emptyStateEl.style.display = 'none';
   resultsEl.innerHTML = '';
 
-  const allNumbers = Array.from({ length: setCount }, () => generateNumbers());
+  const allNumbers = Array.from({ length: setCount }, (_, i) => generateNumbers(i));
   const setElements = allNumbers.map((nums, i) => createLottoSet(nums, i, true));
 
   setElements.forEach(({ set }) => resultsEl.appendChild(set));
@@ -185,6 +248,12 @@ increaseBtn.addEventListener('click', () => {
 });
 
 drawBtn.addEventListener('click', draw);
+
+birthdateEl.addEventListener('input', clearBirthdateError);
+birthdateEl.addEventListener('change', clearBirthdateError);
+
+const today = new Date();
+birthdateEl.max = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
 updateStepper();
 

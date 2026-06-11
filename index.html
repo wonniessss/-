@@ -14,10 +14,15 @@
     <header class="header">
       <div class="logo">🎱</div>
       <h1>로또 번호 추첨기</h1>
-      <p class="subtitle">1~45 중 6개 번호 + 보너스 번호 1개를 무작위로 추첨합니다</p>
+      <p class="subtitle">생년월일을 입력하면 행운의 번호를 추첨해 드립니다</p>
     </header>
 
     <section class="controls">
+      <div class="birthdate-group">
+        <label for="birthdate">생년월일</label>
+        <input type="date" id="birthdate" class="birthdate-input" min="1900-01-01" required>
+        <p class="birthdate-error" id="birthdateError" hidden>올바른 생년월일을 입력해 주세요.</p>
+      </div>
       <div class="control-group">
         <label for="setCount">생성 개수</label>
         <div class="stepper">
@@ -34,7 +39,7 @@
     <section class="results" id="results" aria-live="polite">
       <div class="empty-state" id="emptyState">
         <div class="empty-icon" aria-hidden="true">✨</div>
-        <p>버튼을 눌러 행운의 번호를 받아보세요!</p>
+        <p>생년월일을 입력하고 번호를 추첨해 보세요!</p>
       </div>
     </section>
 
