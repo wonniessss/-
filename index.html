@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>로또 번호 추첨기</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="logo">🎱</div>
+      <h1>로또 번호 추첨기</h1>
+      <p class="subtitle">1~45 중 6개 번호 + 보너스 번호 1개를 무작위로 추첨합니다</p>
+    </header>
+
+    <section class="controls">
+      <div class="control-group">
+        <label for="setCount">생성 개수</label>
+        <div class="stepper">
+          <button type="button" id="decreaseBtn" aria-label="개수 줄이기">−</button>
+          <span id="setCount">1</span>
+          <button type="button" id="increaseBtn" aria-label="개수 늘리기">+</button>
+        </div>
+      </div>
+      <button type="button" id="drawBtn" class="draw-btn" aria-label="로또 번호 추첨">
+        <span class="draw-btn-text">번호 추첨하기</span>
+      </button>
+    </section>
+
+    <section class="results" id="results" aria-live="polite">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon" aria-hidden="true">✨</div>
+        <p>버튼을 눌러 행운의 번호를 받아보세요!</p>
+      </div>
+    </section>
+
+    <section class="history-section">
+      <div class="history-header">
+        <h2>역대 1등 당첨번호</h2>
+        <input type="search" id="historySearch" class="history-search" placeholder="회차 검색 (예: 1227)" inputmode="numeric">
+      </div>
+      <p class="history-status" id="historyStatus">당첨 기록을 불러오는 중...</p>
+      <div class="history-list" id="historyList"></div>
+      <button type="button" id="loadMoreBtn" class="load-more-btn" hidden>더 보기</button>
+    </section>
+
+    <footer class="footer">
+      <p>※ 본 추첨기는 오락용이며, 당첨을 보장하지 않습니다.</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
