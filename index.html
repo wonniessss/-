@@ -14,7 +14,7 @@
     <header class="header">
       <div class="logo">🎱</div>
       <h1>로또 번호 추첨기</h1>
-      <p class="subtitle">생년월일을 입력하면 행운의 번호를 추첨해 드립니다</p>
+      <p class="subtitle">생년월일 기반 오늘의 운세로 행운의 번호를 추천해 드립니다</p>
     </header>
 
     <section class="controls">
@@ -31,15 +31,31 @@
           <button type="button" id="increaseBtn" aria-label="개수 늘리기">+</button>
         </div>
       </div>
-      <button type="button" id="drawBtn" class="draw-btn" aria-label="로또 번호 추첨">
-        <span class="draw-btn-text">번호 추첨하기</span>
+      <button type="button" id="drawBtn" class="draw-btn" aria-label="운세 기반 번호 추천">
+        <span class="draw-btn-text">운세 기반 번호 추천</span>
       </button>
+    </section>
+
+    <section class="chat-section" aria-label="운세 챗봇">
+      <div class="chat-header">
+        <h2>운세 챗봇</h2>
+        <p class="chat-desc">오늘의 운세에 대해 자유롭게 물어보세요</p>
+      </div>
+      <div class="chat-messages" id="chatMessages" aria-live="polite">
+        <div class="chat-message chat-message--bot">
+          <p>안녕하세요! 생년월일을 입력한 뒤 <strong>운세 기반 번호 추천</strong> 버튼을 누르거나, 궁금한 점을 메시지로 보내 주세요.</p>
+        </div>
+      </div>
+      <form class="chat-form" id="chatForm">
+        <input type="text" id="chatInput" class="chat-input" placeholder="예: 오늘 연애운은 어때?" maxlength="500" autocomplete="off">
+        <button type="submit" class="chat-send-btn" id="chatSendBtn">전송</button>
+      </form>
     </section>
 
     <section class="results" id="results" aria-live="polite">
       <div class="empty-state" id="emptyState">
         <div class="empty-icon" aria-hidden="true">✨</div>
-        <p>생년월일을 입력하고 번호를 추첨해 보세요!</p>
+        <p>생년월일을 입력하고 운세 기반 번호를 추천받아 보세요!</p>
       </div>
     </section>
 

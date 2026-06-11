@@ -11,23 +11,16 @@ const resultsEl = document.getElementById('results');
 const emptyStateEl = document.getElementById('emptyState');
 const birthdateEl = document.getElementById('birthdate');
 const birthdateErrorEl = document.getElementById('birthdateError');
+const chatMessagesEl = document.getElementById('chatMessages');
+const chatFormEl = document.getElementById('chatForm');
+const chatInputEl = document.getElementById('chatInput');
+const chatSendBtnEl = document.getElementById('chatSendBtn');
 
 let setCount = 1;
 let isDrawing = false;
-let drawNonce = 0;
+let chatHistory = [];
 
-function createSeededRandom(seed) {
-  let state = seed >>> 0;
-  return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state / 0x100000000;
-  };
-}
-
-function getBirthdateSeed(setIndex) {
-  const [y, m, d] = birthdateEl.value.split('-').map(Number);
-  return y * 10000 + m * 100 + d + setIndex * 997 + drawNonce * 7919;
-}
+const API_CHAT_URL = '/api/chat';
 
 function validateBirthdate() {
   const value = birthdateEl.value;
@@ -65,31 +58,112 @@ function clearBirthdateError() {
   birthdateErrorEl.hidden = true;
 }
 
+function appendChatMessage(role, text, label) {
+  const msg = document.createElement('div');
+  msg.className = `chat-message chat-message--${role}`;
+
+  if (label) {
+    const labelEl = document.createElement('span');
+    labelEl.className = 'chat-message__label';
+    labelEl.textContent = label;
+    msg.appendChild(labelEl);
+  }
+
+  const p = document.createElement('p');
+  p.textContent = text;
+  msg.appendChild(p);
+  chatMessagesEl.appendChild(msg);
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  return msg;
+}
+
+function appendLoadingMessage() {
+  const msg = document.createElement('div');
+  msg.className = 'chat-message chat-message--loading';
+  msg.id = 'chatLoading';
+  msg.textContent = '오늘의 운세를 분석하고 있어요...';
+  chatMessagesEl.appendChild(msg);
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  return msg;
+}
+
+function removeLoadingMessage() {
+  document.getElementById('chatLoading')?.remove();
+}
+
+async function requestFortune({ mode, message = '' }) {
+  const res = await fetch(API_CHAT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      birthdate: birthdateEl.value,
+      setCount,
+      message,
+      history: chatHistory,
+      mode,
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || '운세 분석에 실패했습니다.');
+  }
+  return data;
+}
+
+function createFortuneCard(fortune, explanation) {
+  const card = document.createElement('article');
+  card.className = 'fortune-card';
+
+  const title = document.createElement('h3');
+  title.className = 'fortune-card__title';
+  title.textContent = '오늘의 운세';
+
+  const fortuneEl = document.createElement('p');
+  fortuneEl.className = 'fortune-card__fortune';
+  fortuneEl.textContent = fortune;
+
+  card.append(title, fortuneEl);
+
+  if (explanation) {
+    const explanationEl = document.createElement('p');
+    explanationEl.className = 'fortune-card__explanation';
+    explanationEl.textContent = explanation;
+    card.appendChild(explanationEl);
+  }
+
+  return card;
+}
+
+function addBotResponses(data, includeNumbers) {
+  if (includeNumbers) {
+    if (data.fortune) {
+      appendChatMessage('bot', data.fortune, '오늘의 운세');
+      chatHistory.push({ role: 'assistant', content: data.fortune });
+    }
+    if (data.explanation) {
+      appendChatMessage('bot', data.explanation, '번호 추천 이유');
+      chatHistory.push({ role: 'assistant', content: data.explanation });
+    }
+  } else {
+    const reply = data.reply || data.fortune;
+    if (reply) {
+      appendChatMessage('bot', reply);
+      chatHistory.push({ role: 'assistant', content: reply });
+    }
+  }
+
+  if (chatHistory.length > 20) {
+    chatHistory = chatHistory.slice(-20);
+  }
+}
+
 function getBallColor(num) {
   if (num <= 10) return 'yellow';
   if (num <= 20) return 'blue';
   if (num <= 30) return 'red';
   if (num <= 40) return 'gray';
   return 'green';
-}
-
-function generateNumbers(setIndex = 0) {
-  const rng = createSeededRandom(getBirthdateSeed(setIndex));
-  const pool = Array.from({ length: MAX }, (_, i) => i + MIN);
-  const main = [];
-
-  for (let i = 0; i < PICK; i++) {
-    const idx = Math.floor(rng() * pool.length);
-    main.push(pool.splice(idx, 1)[0]);
-  }
-
-  const bonusIdx = Math.floor(rng() * pool.length);
-  const bonus = pool[bonusIdx];
-
-  return {
-    main: main.sort((a, b) => a - b),
-    bonus,
-  };
 }
 
 function createBall(num, delay) {
@@ -193,6 +267,27 @@ async function animateReveal(ballsEl, main, bonus, copyBtn) {
   copyBtn.disabled = false;
 }
 
+async function displayRecommendations(data) {
+  if (!data.sets?.length) {
+    throw new Error('번호 추천 결과를 받지 못했습니다. 다시 시도해 주세요.');
+  }
+
+  emptyStateEl.style.display = 'none';
+  resultsEl.innerHTML = '';
+
+  if (data.fortune) {
+    resultsEl.appendChild(createFortuneCard(data.fortune, data.explanation));
+  }
+
+  const setElements = data.sets.map((nums, i) => createLottoSet(nums, i, true));
+  setElements.forEach(({ set }) => resultsEl.appendChild(set));
+
+  for (const { balls, copyBtn, main, bonus } of setElements) {
+    await animateReveal(balls, main, bonus, copyBtn);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
 async function draw() {
   if (isDrawing) return;
 
@@ -204,27 +299,74 @@ async function draw() {
   }
 
   clearBirthdateError();
-  drawNonce += 1;
   isDrawing = true;
   drawBtn.disabled = true;
+  chatSendBtnEl.disabled = true;
+  chatInputEl.disabled = true;
   drawBtn.classList.add('drawing');
+  appendLoadingMessage();
 
-  emptyStateEl.style.display = 'none';
-  resultsEl.innerHTML = '';
-
-  const allNumbers = Array.from({ length: setCount }, (_, i) => generateNumbers(i));
-  const setElements = allNumbers.map((nums, i) => createLottoSet(nums, i, true));
-
-  setElements.forEach(({ set }) => resultsEl.appendChild(set));
-
-  for (const { balls, copyBtn, main, bonus } of setElements) {
-    await animateReveal(balls, main, bonus, copyBtn);
-    await new Promise((r) => setTimeout(r, 100));
+  try {
+    const data = await requestFortune({ mode: 'recommend' });
+    removeLoadingMessage();
+    addBotResponses(data, true);
+    await displayRecommendations(data);
+  } catch (error) {
+    removeLoadingMessage();
+    appendChatMessage('bot', error.message || '운세 분석에 실패했습니다. Vercel에 GEMINI_API_KEY가 설정되어 있는지 확인해 주세요.');
   }
 
   isDrawing = false;
   drawBtn.disabled = false;
+  chatSendBtnEl.disabled = false;
+  chatInputEl.disabled = false;
   drawBtn.classList.remove('drawing');
+}
+
+async function handleChatSubmit(e) {
+  e.preventDefault();
+  if (isDrawing) return;
+
+  const message = chatInputEl.value.trim();
+  if (!message) return;
+
+  const birthdateCheck = validateBirthdate();
+  if (!birthdateCheck.valid) {
+    showBirthdateError(birthdateCheck.message);
+    birthdateEl.focus();
+    return;
+  }
+
+  clearBirthdateError();
+  appendChatMessage('user', message);
+  chatHistory.push({ role: 'user', content: message });
+  chatInputEl.value = '';
+
+  isDrawing = true;
+  drawBtn.disabled = true;
+  chatSendBtnEl.disabled = true;
+  chatInputEl.disabled = true;
+  appendLoadingMessage();
+
+  try {
+    const data = await requestFortune({ mode: 'chat', message });
+    removeLoadingMessage();
+
+    const wantsNumbers = /번호|로또|추천|행운/.test(message);
+    addBotResponses(data, wantsNumbers && data.sets?.length > 0);
+
+    if (wantsNumbers && data.sets?.length > 0) {
+      await displayRecommendations(data);
+    }
+  } catch (error) {
+    removeLoadingMessage();
+    appendChatMessage('bot', error.message || '답변 생성에 실패했습니다.');
+  }
+
+  isDrawing = false;
+  drawBtn.disabled = false;
+  chatSendBtnEl.disabled = false;
+  chatInputEl.disabled = false;
 }
 
 function updateStepper() {
@@ -248,6 +390,7 @@ increaseBtn.addEventListener('click', () => {
 });
 
 drawBtn.addEventListener('click', draw);
+chatFormEl.addEventListener('submit', handleChatSubmit);
 
 birthdateEl.addEventListener('input', clearBirthdateError);
 birthdateEl.addEventListener('change', clearBirthdateError);
