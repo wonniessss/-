@@ -2,7 +2,7 @@ const MIN = 1;
 const MAX = 45;
 const PICK = 6;
 const MODEL = 'gemini-2.5-flash-lite';
-const CACHE_TTL_MS = 1000 * 60 * 60; // 1 hour
+const CACHE_TTL_MS = 1000 * 60 * 60;
 
 const responseCache = new Map();
 
@@ -81,7 +81,6 @@ function buildPrompt({ birthdate, setCount, message, history, mode, fortuneConte
       .join('\n');
 
     return `?? ?? ?????. ?? ?? ??? ???? ??? ???? ????.
-??? ?? ??? ???? ???? sets? ????.
 
 - ????: ${birthdate}
 - ??: ${today}
@@ -101,7 +100,6 @@ reply ??? 3~5???? ???? ??? ??? ?????.`;
 
   const base = `??6/45 ?? ?? ?? ?????.
 ????? ?? ??? ??? ???? 1~45 ? 6?+??? 1?? ?????.
-?? ???? ??? ???? ????.
 
 - ????: ${birthdate}
 - ??: ${today}
@@ -141,9 +139,9 @@ function fillMissingSets(sets, count, birthdate, seq) {
   const valid = sets.map(normalizeSet).filter(Boolean);
   const used = new Set(valid.flatMap((s) => [...s.main, s.bonus]));
 
-  let seed = birthdate.split('-').join('') * 1 + seq * 9973;
+  let seed = Number(birthdate.replace(/-/g, '')) + seq * 9973;
   const rng = () => {
-    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    seed = (Math.imul(seed >>> 0, 1664525) + 1013904223) >>> 0;
     return seed / 0x100000000;
   };
 
@@ -185,12 +183,12 @@ function parseRetryDelayMs(errorText) {
   return 3000;
 }
 
-function formatApiError(status, errorText) {
+function formatApiError(status) {
   if (status === 429) {
     return {
       status: 429,
       code: 'QUOTA_EXCEEDED',
-      message: 'Gemini API ?? ?? ??? ??????. ?? ? ?? ?????, ?? ?? ?? ??? ??? ???.',
+      message: 'Gemini API ?? ?? ??? ??????.',
     };
   }
   return {
@@ -218,7 +216,7 @@ async function callGemini(apiKey, prompt, schema) {
 
   if (!res.ok) {
     const err = await res.text();
-    const formatted = formatApiError(res.status, err);
+    const formatted = formatApiError(res.status);
     const error = new Error(formatted.message);
     error.status = formatted.status;
     error.code = formatted.code;
@@ -255,10 +253,10 @@ function buildLocalRecommend(birthdate, setCount, seq) {
   const sets = fillMissingSets([], setCount, birthdate, seq);
   const [, m, d] = birthdate.split('-').map(Number);
   return {
-    fortune: `${m}? ${d}??? ?? ???? ?????? ???? ?? ????. ?? ????? ?? ???? ??, ?? ??? ??? ??? ?????. ??? ??? ???? ?????.`,
+    fortune: `${m}? ${d}??? ?? ???? ?????? ???? ?? ????. ?? ????? ?? ???? ??, ?? ??? ??? ??? ?????.`,
     sets,
-    explanation: '???? ??? ?? ??? ??? ??? ?? ??? ??????. (API ?? ?? ? ?? ??)',
-    reply: '?? ?? ???? ??? ??????.',
+    explanation: '???? ??? ?? ??? ??? ??? ?? ??? ??????.',
+    reply: '?? ?? ??? ??????.',
     fromFallback: true,
   };
 }
@@ -274,11 +272,6 @@ module.exports = async (req, res) => {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY ????? ???? ?????.' });
   }
 
   try {
@@ -299,28 +292,26 @@ module.exports = async (req, res) => {
 
     const count = Math.min(Math.max(Number(setCount) || 1, 1), 5);
     const cacheKey = getCacheKey({ birthdate, mode, setCount: count, message, seq });
+    const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!useFallback) {
-      const cached = getCached(cacheKey);
-      if (cached) {
-        return res.status(200).json({ ...cached, fromCache: true });
-      }
-    }
-
-    if (useFallback) {
+    if (useFallback || !apiKey) {
       if (mode === 'recommend') {
-        const local = buildLocalRecommend(birthdate, count, seq);
-        return res.status(200).json(local);
+        return res.status(200).json(buildLocalRecommend(birthdate, count, seq));
       }
       return res.status(200).json({
         fortune: fortuneContext?.fortune || '',
         sets: [],
         explanation: '',
         reply: fortuneContext?.fortune
-          ? `?? AI ?? ??? ?? ??? ??? ???? ??????.\n\n${fortuneContext.fortune}\n\n???? ?? ??, ??, ?? ? ????? ??? ???.`
+          ? `??? ??? ???? ??????.\n\n${fortuneContext.fortune}`
           : '?? ?? ?? ?? ??? ?? ???.',
         fromFallback: true,
       });
+    }
+
+    const cached = getCached(cacheKey);
+    if (cached) {
+      return res.status(200).json({ ...cached, fromCache: true });
     }
 
     const isChatWithContext = mode === 'chat' && fortuneContext?.fortune;
@@ -339,23 +330,22 @@ module.exports = async (req, res) => {
     try {
       parsed = await callGeminiWithRetry(apiKey, prompt, schema);
     } catch (error) {
-      if (error.code === 'QUOTA_EXCEEDED') {
-        if (mode === 'recommend') {
-          const local = buildLocalRecommend(birthdate, count, seq);
-          return res.status(200).json(local);
-        }
-        if (fortuneContext?.fortune) {
-          return res.status(200).json({
-            fortune: fortuneContext.fortune,
-            sets: [],
-            explanation: '',
-            reply: `AI ??? ??? ??? ??? ???? ??????.\n\n${fortuneContext.fortune}`,
-            fromFallback: true,
-          });
-        }
-        return res.status(429).json({ error: error.message, code: 'QUOTA_EXCEEDED' });
+      if (mode === 'recommend') {
+        return res.status(200).json(buildLocalRecommend(birthdate, count, seq));
       }
-      throw error;
+      if (fortuneContext?.fortune) {
+        return res.status(200).json({
+          fortune: fortuneContext.fortune,
+          sets: [],
+          explanation: fortuneContext.explanation || '',
+          reply: `AI ??? ??? ??? ??? ???? ??????.\n\n${fortuneContext.fortune}`,
+          fromFallback: true,
+        });
+      }
+      return res.status(error.status || 500).json({
+        error: error.message || '?? ?? ? ??? ??????.',
+        code: error.code || 'API_ERROR',
+      });
     }
 
     let result;
@@ -376,14 +366,23 @@ module.exports = async (req, res) => {
       };
     }
 
+    if (mode === 'recommend' && !result.sets.length) {
+      const local = buildLocalRecommend(birthdate, count, seq);
+      result = { ...local, fortune: result.fortune || local.fortune, explanation: result.explanation || local.explanation };
+    }
+
     setCache(cacheKey, result);
     return res.status(200).json(result);
   } catch (error) {
     console.error('Chat API error:', error);
-    const status = error.status || 500;
-    return res.status(status).json({
+    const { birthdate, setCount = 1, mode = 'recommend', seq = 0 } = req.body || {};
+    if (mode === 'recommend' && birthdate) {
+      const count = Math.min(Math.max(Number(setCount) || 1, 1), 5);
+      return res.status(200).json(buildLocalRecommend(birthdate, count, seq));
+    }
+    return res.status(500).json({
       error: error.message || '?? ?? ? ??? ??????.',
-      code: error.code || 'API_ERROR',
+      code: 'API_ERROR',
     });
   }
 };

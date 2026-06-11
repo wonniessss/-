@@ -473,7 +473,31 @@ body {
 
 /* Results */
 .results {
-  min-height: 200px;
+  min-height: 120px;
+  margin-bottom: var(--space-lg);
+}
+
+.results-output {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.results-loading {
+  text-align: center;
+  padding: var(--space-xl) var(--space-base);
+  font-size: 14px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.results-error {
+  background: #fff5f5;
+  border: 1px solid #ffc9c9;
+  border-radius: var(--rounded-md);
+  padding: var(--space-base) var(--space-lg);
+  font-size: 14px;
+  color: var(--primary-error-text);
 }
 
 .empty-state {

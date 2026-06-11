@@ -36,6 +36,15 @@
       </button>
     </section>
 
+    <section class="results" id="results" aria-live="polite">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon" aria-hidden="true">✨</div>
+        <p>생년월일을 입력하고 운세 기반 번호를 추천받아 보세요!</p>
+      </div>
+      <div class="results-loading" id="resultsLoading" hidden>번호를 추첨하고 있어요...</div>
+      <div class="results-output" id="resultsOutput"></div>
+    </section>
+
     <section class="chat-section" aria-label="운세 챗봇">
       <div class="chat-header">
         <h2>운세 챗봇</h2>
@@ -50,13 +59,6 @@
         <input type="text" id="chatInput" class="chat-input" placeholder="예: 오늘 연애운은 어때?" maxlength="500" autocomplete="off">
         <button type="submit" class="chat-send-btn" id="chatSendBtn">전송</button>
       </form>
-    </section>
-
-    <section class="results" id="results" aria-live="polite">
-      <div class="empty-state" id="emptyState">
-        <div class="empty-icon" aria-hidden="true">✨</div>
-        <p>생년월일을 입력하고 운세 기반 번호를 추천받아 보세요!</p>
-      </div>
     </section>
 
     <section class="reviews-section" aria-label="당첨 후기">

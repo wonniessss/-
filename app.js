@@ -9,6 +9,8 @@ const increaseBtn = document.getElementById('increaseBtn');
 const drawBtn = document.getElementById('drawBtn');
 const resultsEl = document.getElementById('results');
 const emptyStateEl = document.getElementById('emptyState');
+const resultsLoadingEl = document.getElementById('resultsLoading');
+const resultsOutputEl = document.getElementById('resultsOutput');
 const birthdateEl = document.getElementById('birthdate');
 const birthdateErrorEl = document.getElementById('birthdateError');
 const chatMessagesEl = document.getElementById('chatMessages');
@@ -85,8 +87,8 @@ function onBirthdateChange() {
       sessionFortune = null;
       recommendSeq = 0;
       resetChatForNewBirthdate();
-      resultsEl.innerHTML = '';
-      emptyStateEl.style.display = '';
+      clearResultsOutput();
+      showEmptyState();
     }
     activeBirthdate = value;
     resetUiState();
@@ -156,25 +158,101 @@ function removeLoadingMessage() {
   document.getElementById('chatLoading')?.remove();
 }
 
-async function requestFortune({ mode, message = '', useFallback = false }) {
-  const res = await fetch(API_CHAT_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      birthdate: birthdateEl.value,
-      setCount,
-      message,
-      history: chatHistory,
-      mode,
-      fortuneContext: sessionFortune,
-      seq: recommendSeq,
-      useFallback,
-    }),
-  });
+function createSeededRng(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+}
 
-  const data = await res.json();
+function buildLocalRecommend(birthdate, count, seq) {
+  const rng = createSeededRng(Number(birthdate.replace(/-/g, '')) + seq * 9973);
+  const sets = [];
+
+  for (let s = 0; s < count; s += 1) {
+    const pool = Array.from({ length: MAX }, (_, i) => i + MIN);
+    const main = [];
+    for (let i = 0; i < PICK; i += 1) {
+      const idx = Math.floor(rng() * pool.length);
+      main.push(pool.splice(idx, 1)[0]);
+    }
+    const bonusIdx = Math.floor(rng() * pool.length);
+    sets.push({ main: main.sort((a, b) => a - b), bonus: pool[bonusIdx] });
+  }
+
+  const [, m, d] = birthdate.split('-').map(Number);
+  return {
+    fortune: `${m}월 ${d}일생의 오늘 에너지는 차분하면서도 집중력이 높은 날입니다. 작은 행운도 스스로 만드는 흐름이에요.`,
+    sets,
+    explanation: '생년월일과 오늘 날짜를 반영해 행운의 숫자 조합을 구성했습니다.',
+    reply: '',
+    fromFallback: true,
+  };
+}
+
+function showEmptyState() {
+  emptyStateEl.hidden = false;
+  resultsLoadingEl.hidden = true;
+}
+
+function showResultsLoading() {
+  emptyStateEl.hidden = true;
+  resultsLoadingEl.hidden = false;
+  clearResultsOutput();
+}
+
+function clearResultsOutput() {
+  resultsOutputEl.innerHTML = '';
+}
+
+function showResultsError(message) {
+  clearResultsOutput();
+  const err = document.createElement('p');
+  err.className = 'results-error';
+  err.textContent = message;
+  resultsOutputEl.appendChild(err);
+  resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function requestFortune({ mode, message = '', useFallback = false }) {
+  let res;
+  try {
+    res = await fetch(API_CHAT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        birthdate: birthdateEl.value,
+        setCount,
+        message,
+        history: chatHistory,
+        mode,
+        fortuneContext: sessionFortune,
+        seq: recommendSeq,
+        useFallback,
+      }),
+    });
+  } catch {
+    if (mode === 'recommend') {
+      return buildLocalRecommend(birthdateEl.value, setCount, recommendSeq);
+    }
+    throw new Error('서버에 연결할 수 없습니다. Vercel 배포 환경에서 이용해 주세요.');
+  }
+
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    if (mode === 'recommend') {
+      return buildLocalRecommend(birthdateEl.value, setCount, recommendSeq);
+    }
+    throw new Error('서버 응답을 처리할 수 없습니다.');
+  }
 
   if (!res.ok) {
+    if (mode === 'recommend') {
+      return buildLocalRecommend(birthdateEl.value, setCount, recommendSeq);
+    }
     if (data.code === 'QUOTA_EXCEEDED' && !useFallback) {
       return requestFortune({ mode, message, useFallback: true });
     }
@@ -347,18 +425,24 @@ async function animateReveal(ballsEl, main, bonus, copyBtn) {
 
 async function displayRecommendations(data) {
   if (!data.sets?.length) {
-    throw new Error('번호 추천 결과를 받지 못했습니다. 다시 시도해 주세요.');
+    if (!data.fortune) {
+      throw new Error('번호 추천 결과를 받지 못했습니다. 다시 시도해 주세요.');
+    }
+    data = { ...data, ...buildLocalRecommend(birthdateEl.value, setCount, recommendSeq) };
   }
 
-  emptyStateEl.style.display = 'none';
-  resultsEl.innerHTML = '';
+  emptyStateEl.hidden = true;
+  resultsLoadingEl.hidden = true;
+  clearResultsOutput();
 
   if (data.fortune) {
-    resultsEl.appendChild(createFortuneCard(data.fortune, data.explanation));
+    resultsOutputEl.appendChild(createFortuneCard(data.fortune, data.explanation));
   }
 
   const setElements = data.sets.map((nums, i) => createLottoSet(nums, i, true));
-  setElements.forEach(({ set }) => resultsEl.appendChild(set));
+  setElements.forEach(({ set }) => resultsOutputEl.appendChild(set));
+
+  resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   for (const { balls, copyBtn, main, bonus } of setElements) {
     await animateReveal(balls, main, bonus, copyBtn);
@@ -388,6 +472,7 @@ async function draw() {
   chatInputEl.disabled = true;
   drawBtn.classList.add('drawing');
   appendLoadingMessage();
+  showResultsLoading();
 
   try {
     const data = await requestFortune({ mode: 'recommend' });
@@ -395,13 +480,15 @@ async function draw() {
     saveSessionFortune(data);
 
     if (data.fromFallback) {
-      appendChatMessage('bot', 'AI 사용 한도로 로컬 운세 추천을 사용했습니다.');
+      appendChatMessage('bot', 'AI 연결이 어려워 로컬 운세 기반 번호를 추천했습니다.');
     }
 
     addBotResponses(data, true);
     await displayRecommendations(data);
   } catch (error) {
     removeLoadingMessage();
+    showEmptyState();
+    showResultsError(error.message || '운세 분석에 실패했습니다.');
     appendChatMessage('bot', error.message || '운세 분석에 실패했습니다.');
   } finally {
     resetUiState();
